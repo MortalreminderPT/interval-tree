@@ -120,7 +120,7 @@ impl<T: Value + Clone + Default> Tree<T> {
         if left == new_left && right == new_right {
             return;
         }
-        // println!("Adding [{new_left}, {new_right}], {old_value} -> {}", value.to_string());
+        // println!("Adding [{new_left}, {new_right}], {old_value} -> {}", value.display());
         if new_right <= left {
             let node = Node::new(new_left, new_right, value);
             let tree = Tree::from_node(node);
