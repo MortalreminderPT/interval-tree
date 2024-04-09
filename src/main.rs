@@ -2,14 +2,30 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-struct Node {
-    left: i32,
-    right: i32,
-    value: String,
+trait Value {
+    fn display(&self) -> String;
 }
 
-impl Node {
-    fn new(left: i32, right: i32, value: &String) -> Node {
+impl Value for String {
+    fn display(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl Value for &str {
+    fn display(&self) -> String {
+        self.to_string()
+    }
+}
+
+struct Node<T: Value + Clone + Default> {
+    left: i32,
+    right: i32,
+    value: T,
+}
+
+impl<T: Value + Clone + Default> Node<T> {
+    fn new(left: i32, right: i32, value: &T) -> Node<T> {
         Node {
             left,
             right,
@@ -18,25 +34,25 @@ impl Node {
     }
 }
 
-struct Tree {
-    node: Rc<RefCell<Node>>,
-    left_child: Option<Rc<RefCell<Tree>>>,
-    right_child: Option<Rc<RefCell<Tree>>>,
+struct Tree<T: Value + Clone + Default> {
+    node: Rc<RefCell<Node<T>>>,
+    left_child: Option<Rc<RefCell<Tree<T>>>>,
+    right_child: Option<Rc<RefCell<Tree<T>>>>,
 }
 
-impl Tree {
-    fn new() -> Tree {
+impl<T: Value + Clone + Default> Tree<T> {
+    fn new() -> Tree<T> {
         Tree {
-            node: Rc::new(RefCell::new(Node::new(0, 1, &"".to_string()))),
+            node: Rc::new(RefCell::new(Node::new(0, 1, &Default::default()))),
             left_child: None,
             right_child: None,
         }
     }
 
-    fn from_node(node: Node) -> Tree {
+    fn from_node(node: Node<T>) -> Tree<T> {
         let node = Rc::new(RefCell::new(node));
         Tree {
-            node: node,
+            node,
             left_child: None,
             right_child: None,
         }
@@ -92,14 +108,16 @@ impl Tree {
     //     }
     // }
 
-    fn update_node(&mut self, new_left: i32, new_right: i32, value: &String) {
+    fn update_node(&mut self, new_left: i32, new_right: i32, value: &T) {
         if new_left >= new_right { return }
         let node = &self.node;
         let left = node.borrow().left;
         let right = node.borrow().right;
         let old_value = &self.node.borrow().value.clone();
-        if new_left == left && new_right == right {
-            self.node.borrow_mut().value = value.to_string();
+        if left >= new_left && right <= new_right {
+            self.node.borrow_mut().value = value.clone();
+        }
+        if left == new_left && right == new_right {
             return;
         }
         // println!("Adding [{new_left}, {new_right}], {old_value} -> {}", value.to_string());
@@ -145,7 +163,6 @@ impl Tree {
                     } else {
                         self.update_node(inters[i], inters[i + 1], old_value);
                     }
-                    // self.update_node(inters[i], inters[i + 1], old_value);
                 }
             }
         }
@@ -156,7 +173,7 @@ impl Tree {
             None => {},
             Some(left_child) => left_child.borrow().display(),
         };
-        println!("[{}, {}]: {}", self.node.borrow().left, self.node.borrow().right, self.node.borrow().value);
+        println!("[{}, {}]: {}", self.node.borrow().left, self.node.borrow().right, self.node.borrow().value.display());
         match &self.right_child {
             None => {},
             Some(right_child) => right_child.borrow().display(),
@@ -164,28 +181,41 @@ impl Tree {
     }
 }
 
+impl<T: Value + Clone + Default> Tree<T> {
+    fn update(&mut self, left: i32, right: i32, value: &T) -> Option<()> {
+        if right - left < 1 {
+            None
+        } else {
+            self.update_node(left, right, value);
+            Some(())
+        }
+    }
+}
+
 fn main() {
     let mut tree = Tree::new();
-    tree.update_node(-10000000, 0, &"hello1".to_string());
-    tree.update_node(1, 2, &"hell2o".to_string());
-    tree.update_node(1, 3, &"he546llo".to_string());
-    tree.update_node(1, 5, &"hel1561lo".to_string());
-    tree.update_node(1, 6, &"he1561llo".to_string());
-    tree.update_node(1, 7, &"hel1561lo".to_string());
-    tree.update_node(1, 90, &"he1561llo".to_string());
-    tree.update_node(-10, 10, &"hell46o".to_string());
-    tree.update_node(-10, 10, &"hel4561lo".to_string());
-    tree.update_node(-10, 10, &"he4561llo".to_string());
-    tree.update_node(6, 8, &"4564165".to_string());
-    // tree.update_node(3, 4);
-    // tree.update_node(1, 2);
-    // tree.update_node(1, 1);
-    // tree.update_node(600, 800);
-    // tree.update_node(1, 2);
-    // tree.update_node(3, 4);
-    // tree.update_node(-2, -1);
-    // tree.update_node(3, 4);
-    tree.update_node(-10, 10, &"Hello".to_string());
-    tree.update_node(-1321561113, 1321561113, &"123".to_string());
+    tree.update(0, 1, &"0..1");
+    tree.update(-100, 0, &"-100..0");
+    tree.update(1, 2, &"1..2");
+    tree.update(1, 3, &"1..3");
+    tree.update(1, 5, &"1..5");
+    tree.update(1, 6, &"1..6");
+    tree.update(1, 7, &"1..7");
+    tree.update(0, 4, &"0..4");
+    tree.update(1, 90, &"1..90");
+    tree.update(-10, 10, &"-10..10");
+    tree.update(-10, 10, &"-10..10");
+    tree.update(-10, 10, &"-10..10");
+    tree.update(-10, 10, &"-10..10");
+    tree.update(6, 8, &"6..8");
+    tree.update(3, 4, &"3..4");
+    tree.update(1, 2, &"1..2");
+    tree.update(1, 1, &"1..1"); // can't update
+    tree.update(600, 800, &"600..800");
+    tree.update(1, 2, &"1..2");
+    tree.update(3, 4, &"3..4");
+    tree.update(-2, -1, &"-2..-1");
+    tree.update(3, 4, &"3..4");
+    tree.update(-10, 10, &"-10..10");
     tree.display();
 }
