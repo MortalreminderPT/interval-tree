@@ -1,30 +1,15 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::rc::Rc;
 
-trait Value {
-    fn display(&self) -> String;
-}
-
-impl Value for String {
-    fn display(&self) -> String {
-        self.to_string()
-    }
-}
-
-impl Value for &str {
-    fn display(&self) -> String {
-        self.to_string()
-    }
-}
-
-struct Node<T: Value + Clone + Default> {
+struct Node<T: Clone + Default> {
     left: i32,
     right: i32,
     value: T,
 }
 
-impl<T: Value + Clone + Default> Node<T> {
+impl<T: Clone + Default> Node<T> {
     fn new(left: i32, right: i32, value: &T) -> Node<T> {
         Node {
             left,
@@ -34,80 +19,35 @@ impl<T: Value + Clone + Default> Node<T> {
     }
 }
 
-struct Tree<T: Value + Clone + Default> {
+pub(crate) struct InternalTree<T: Clone + Default> {
     node: Rc<RefCell<Node<T>>>,
-    left_child: Option<Rc<RefCell<Tree<T>>>>,
-    right_child: Option<Rc<RefCell<Tree<T>>>>,
+    left_child: Option<Rc<RefCell<InternalTree<T>>>>,
+    right_child: Option<Rc<RefCell<InternalTree<T>>>>,
 }
 
-impl<T: Value + Clone + Default> Tree<T> {
-    fn new() -> Tree<T> {
-        Tree {
+impl<T: Clone + Default> InternalTree<T> {
+    fn new() -> InternalTree<T> {
+        InternalTree {
             node: Rc::new(RefCell::new(Node::new(0, 1, &Default::default()))),
             left_child: None,
             right_child: None,
         }
     }
-
-    fn from_node(node: Node<T>) -> Tree<T> {
+    fn from_internal(left: i32, right: i32) -> InternalTree<T> {
+        InternalTree {
+            node: Rc::new(RefCell::new(Node::new(left, right, &Default::default()))),
+            left_child: None,
+            right_child: None,
+        }
+    }
+    fn from_node(node: Node<T>) -> InternalTree<T> {
         let node = Rc::new(RefCell::new(node));
-        Tree {
+        InternalTree {
             node,
             left_child: None,
             right_child: None,
         }
     }
-
-    // fn add_node(&mut self, new_left: i32, new_right: i32) {
-    //     if new_left >= new_right { return }
-    //     let node = &self.node;
-    //     let left = node.borrow().left;
-    //     let right = node.borrow().right;
-    //     if new_left == left && new_right == right {
-    //         return;
-    //     }
-    //     println!("Adding [{new_left}, {new_right}]");
-    //     if new_right <= left {
-    //         let node = Node::new(new_left, new_right);
-    //         let tree = Tree::from_node(node);
-    //         match &self.left_child {
-    //             None => self.left_child = Some(Rc::new(RefCell::new(tree))),
-    //             Some(left_child) => {
-    //                 left_child.borrow_mut().add_node(new_left, new_right)
-    //             },
-    //         };
-    //     } else if new_left >= right {
-    //         let node = Node::new(new_left, new_right);
-    //         let tree = Tree::from_node(node);
-    //         match &self.right_child {
-    //             None => self.right_child = Some(Rc::new(RefCell::new(tree))),
-    //             Some(right_child) => right_child.borrow_mut().add_node(new_left, new_right),
-    //         };
-    //     }
-    //     else {
-    //         let mut set = HashSet::new();
-    //         set.insert(left);
-    //         set.insert(right);
-    //         set.insert(new_left);
-    //         set.insert(new_right);
-    //         let mut inters = set.iter().map(|v|*v).collect::<Vec<i32>>();// vec![left, right, new_left, new_right];
-    //         inters.sort();
-    //         let mut lid = 0;
-    //         for i in 0..inters.len() - 1 {
-    //             if inters[i] == left {
-    //                 self.node.borrow_mut().right = inters[i + 1];
-    //                 lid = i;
-    //                 break;
-    //             }
-    //         }
-    //         for i in 0..inters.len() - 1 {
-    //             if i != lid {
-    //                 self.add_node(inters[i], inters[i + 1]);
-    //             }
-    //         }
-    //     }
-    // }
-
     fn update_node(&mut self, new_left: i32, new_right: i32, value: &T) {
         if new_left >= new_right { return }
         let node = &self.node;
@@ -123,7 +63,7 @@ impl<T: Value + Clone + Default> Tree<T> {
         // println!("Adding [{new_left}, {new_right}], {old_value} -> {}", value.display());
         if new_right <= left {
             let node = Node::new(new_left, new_right, value);
-            let tree = Tree::from_node(node);
+            let tree = InternalTree::from_node(node);
             match &self.left_child {
                 None => self.left_child = Some(Rc::new(RefCell::new(tree))),
                 Some(left_child) => {
@@ -132,7 +72,7 @@ impl<T: Value + Clone + Default> Tree<T> {
             };
         } else if new_left >= right {
             let node = Node::new(new_left, new_right, value);
-            let tree = Tree::from_node(node);
+            let tree = InternalTree::from_node(node);
             match &self.right_child {
                 None => self.right_child = Some(Rc::new(RefCell::new(tree))),
                 Some(right_child) => right_child.borrow_mut().update_node(new_left, new_right, value),
@@ -167,22 +107,76 @@ impl<T: Value + Clone + Default> Tree<T> {
             }
         }
     }
-
-    fn display(&self) {
+    fn recurse_insert(&self, v: &mut Vec<(i32, i32, T)>) {
         match &self.left_child {
             None => {},
-            Some(left_child) => left_child.borrow().display(),
+            Some(left_child) => left_child.borrow().recurse_insert(v),
         };
-        println!("[{}, {}]: {}", self.node.borrow().left, self.node.borrow().right, self.node.borrow().value.display());
+        v.push((self.node.borrow().left, self.node.borrow().right, self.node.borrow().value.clone()));
         match &self.right_child {
             None => {},
-            Some(right_child) => right_child.borrow().display(),
+            Some(right_child) => right_child.borrow().recurse_insert(v),
         };
+    }
+    fn recurse_find(&self, id: i32) -> Option<T> {
+        return if id < self.node.borrow().right && id >= self.node.borrow().left {
+            Some(self.node.borrow().value.clone())
+        } else if id < self.node.borrow().left {
+            match &self.left_child {
+                None => None,
+                Some(left_child) => left_child.borrow().recurse_find(id),
+            }
+        } else {
+            match &self.right_child {
+                None => None,
+                Some(right_child) => right_child.borrow().recurse_find(id),
+            }
+        }
+    }
+    fn recurse_find_ran(&self, left: i32, right: i32, v: &mut Vec<(i32, i32, T)>) {
+        if right <= self.node.borrow().right && left >= self.node.borrow().left {
+            v.push((left, right, self.node.borrow().value.clone()));
+        } else if right <= self.node.borrow().left {
+            match &self.left_child {
+                None => {},
+                Some(left_child) => left_child.borrow_mut().recurse_find_ran(left, right, v),
+            };
+        } else if left >= self.node.borrow().right {
+            match &self.right_child {
+                None => {},
+                Some(right_child) => right_child.borrow_mut().recurse_find_ran(left, right, v),
+            };
+        } else {
+            // println!("{} {} not in {} {}", left, right, self.node.borrow().left, self.node.borrow().right);
+            let mut set = HashSet::new();
+            set.insert(left);
+            set.insert(right);
+            set.insert(self.node.borrow().left);
+            set.insert(self.node.borrow().right);
+            let mut inters = set.iter().map(|v| *v).collect::<Vec<i32>>();// vec![left, right, new_left, new_right];
+            inters.sort();
+            for i in 0..inters.len() - 1 {
+                if inters[i] >= left && inters[i + 1] <= right {
+                    self.recurse_find_ran(inters[i], inters[i + 1], v);
+                }
+            }
+            // 0..4
+            // 4..5
+            // 5..150
+        }
     }
 }
 
-impl<T: Value + Clone + Default> Tree<T> {
-    fn update(&mut self, left: i32, right: i32, value: &T) -> Option<()> {
+impl<T: Clone + Default> InternalTree<T> {
+    pub(crate) fn index(&self, id: i32) -> Option<T> {
+        self.recurse_find(id)
+    }
+    pub(crate) fn index_range(&self, left: i32, right: i32) -> Vec<(i32, i32, T)> {
+        let mut v = vec![];
+        self.recurse_find_ran(left, right, &mut v);
+        v
+    }
+    pub(crate) fn update(&mut self, left: i32, right: i32, value: &T) -> Option<()> {
         if right - left < 1 {
             None
         } else {
@@ -190,32 +184,37 @@ impl<T: Value + Clone + Default> Tree<T> {
             Some(())
         }
     }
+    pub(crate) fn from_vec(internals: &Vec<(i32, i32, T)>) -> InternalTree<T> {
+        let mut tree: InternalTree<T> = InternalTree::from_internal(internals[0].0, internals[0].1);
+        internals.iter().for_each(|i| tree.update(i.0, i.1, &i.2).unwrap());
+        tree
+    }
+    pub(crate) fn to_vec(self) -> Vec<(i32, i32, T)> {
+        let mut v = vec![];
+        self.recurse_insert(&mut v);
+        return v;
+    }
 }
 
 fn main() {
-    let mut tree = Tree::new();
-    tree.update(0, 1, &"0..1");
-    tree.update(-100, 0, &"-100..0");
-    tree.update(1, 2, &"1..2");
-    tree.update(1, 3, &"1..3");
-    tree.update(1, 5, &"1..5");
-    tree.update(1, 6, &"1..6");
-    tree.update(1, 7, &"1..7");
-    tree.update(0, 4, &"0..4");
-    tree.update(1, 90, &"1..90");
-    tree.update(-10, 10, &"-10..10");
-    tree.update(-10, 10, &"-10..10");
-    tree.update(-10, 10, &"-10..10");
-    tree.update(-10, 10, &"-10..10");
-    tree.update(6, 8, &"6..8");
-    tree.update(3, 4, &"3..4");
-    tree.update(1, 2, &"1..2");
-    tree.update(1, 1, &"1..1"); // can't update
-    tree.update(600, 800, &"600..800");
-    tree.update(1, 2, &"1..2");
-    tree.update(3, 4, &"3..4");
-    tree.update(-2, -1, &"-2..-1");
-    tree.update(3, 4, &"3..4");
-    tree.update(-10, 10, &"-10..10");
-    tree.display();
+    let internals = vec![(4, 8, 4..8), (3, 10, 3..10), (5, 7, 5..7), (100, 200, 100..200)];
+    let internal_tree = InternalTree::from_vec(&internals);
+    // println!("{:?}", internal_tree.index(6));
+    // println!("{:?}", internal_tree.index(7));
+    // println!("{:?}", internal_tree.index(60));
+    // println!("{:?}", internal_tree.index(100));
+    // println!("{:?}", internal_tree.index(100));
+    // println!("{:?}", internal_tree.index(7));
+    // println!("{:?}", internal_tree.index(150));
+    // internal_tree.index_range(1, 700);
+    // internal_tree.index_range(0, 3);
+    println!("index: {:?}", internal_tree.index_range(100, 200));
+    println!("index: {:?}", internal_tree.index_range(100, 150));
+    println!("index: {:?}", internal_tree.index_range(4, 100));
+    println!("index: {:?}", internal_tree.index_range(7, 10));
+    println!("index: {:?}", internal_tree.index_range(1, 4));
+    println!("index: {:?}", internal_tree.index_range(999, 9999));
+    println!("index: {:?}", internal_tree.index_range(5, 8));
+    let ordered_internals = internal_tree.to_vec();
+    println!("res: {:?}", ordered_internals);
 }
